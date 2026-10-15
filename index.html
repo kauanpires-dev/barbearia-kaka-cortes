@@ -16,7 +16,8 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BarberShop","name":"Kaká Cortes - Barbearia","telephone":"+55 19 99156-3904",
 "address":{"@type":"PostalAddress","streetAddress":"Rua Bernardino de Campos, 476","addressLocality":"Campinas","addressRegion":"SP","postalCode":"13010-150","addressCountry":"BR"},
-"aggregateRating":{"@type":"AggregateRating","ratingValue":"5.0","reviewCount":"234"}}
+"aggregateRating":{"@type":"AggregateRating","ratingValue":"5.0","reviewCount":"234"},
+"openingHoursSpecification":[{"@type":"OpeningHoursSpecification","dayOfWeek":"Monday","opens":"08:00","closes":"15:00"},{"@type":"OpeningHoursSpecification","dayOfWeek":["Tuesday","Wednesday","Thursday","Friday"],"opens":"08:00","closes":"19:00"},{"@type":"OpeningHoursSpecification","dayOfWeek":"Saturday","opens":"08:00","closes":"17:00"}]}
 </script>
 <style>
 /* ===== Tokens ===== */
@@ -113,6 +114,12 @@ nav li a{display:block;padding:.9rem 0;border-bottom:1px solid var(--bg3);font-s
 @media(min-width:900px){.loc{grid-template-columns:1fr 1.2fr}}
 .map{min-height:300px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--bg3)}
 .mapl{display:block;position:relative;height:100%;min-height:320px;text-decoration:none}
+.hours{list-style:none;margin:0 0 1.2rem;padding:0}
+.hours li{display:flex;justify-content:space-between;gap:1rem;padding:.5rem 0;border-bottom:1px solid var(--bg3);color:var(--muted)}
+.hours li.today{color:var(--white);font-weight:600}
+.status{display:inline-flex;align-items:center;gap:.5rem;font-weight:600;margin:0 0 .8rem}
+.status::before{content:"";width:.7rem;height:.7rem;border-radius:50%;background:currentColor;flex:none}
+.status.open{color:#4ade80}.status.closed{color:#f87171}
 .mapl svg{position:absolute;inset:0;width:100%;height:100%}
 .mapcta{position:absolute;left:50%;bottom:1rem;transform:translateX(-50%);white-space:nowrap;background:var(--gold);color:#101010;font-weight:600;padding:.7rem 1.3rem;border-radius:999px;min-height:44px;display:inline-flex;align-items:center;box-shadow:0 6px 20px rgba(0,0,0,.5);transition:background .2s}
 .mapl:hover .mapcta{background:#d8b574}
@@ -273,6 +280,9 @@ footer li a:hover{color:var(--gold)}
     <h3>Kaká Cortes - Barbearia</h3>
     <address id="addr">Rua Bernardino de Campos, 476 - Centro, Campinas - SP, CEP 13010-150</address>
     <p style="margin-top:.8rem">Telefone: <a href="tel:+5519991563904">(19) 99156-3904</a></p>
+    <h3 style="margin-top:1.4rem">Horário de funcionamento</h3>
+    <p class="status" id="status">Verificando horário…</p>
+    <ul class="hours" id="hours"></ul>
     <div class="btns">
      <a class="btn btn-gold" href="https://www.google.com/maps/search/?api=1&query=Kak%C3%A1+Cortes+Barbearia%2C+Rua+Bernardino+de+Campos%2C+476%2C+Campinas%2C+SP" target="_blank" rel="noopener">Como chegar</a>
      <a class="btn" data-msg="Olá! Vi o endereço no site da Kaká Cortes e gostaria de falar com a equipe." href="https://wa.me/5519991563904" target="_blank" rel="noopener">Falar com a barbearia</a>
@@ -325,7 +335,7 @@ const FAQ = [
 ['Quais serviços estão disponíveis?','Para saber exatamente quais serviços estão disponíveis, fale com a equipe pelo WhatsApp.'],
 ['Como consultar os valores?','Os valores são informados pela equipe. Chame no WhatsApp para consultar.'],
 ['Onde fica a barbearia?','Rua Bernardino de Campos, 476 - Centro, Campinas - SP, CEP 13010-150.'],
-['Quais são os horários de atendimento?','Para confirmar os horários de atendimento, consulte a equipe pelo WhatsApp: (19) 99156-3904.'],
+['Quais são os horários de atendimento?','Segunda-feira, 08:00 às 15:00; terça a sexta, 08:00 às 19:00; sábado, 08:00 às 17:00; domingo fechado. Para confirmar horários em feriados ou datas especiais, fale com a equipe pelo WhatsApp.'],
 ['Como entrar em contato com a equipe?','Pelo WhatsApp ou pelo telefone (19) 99156-3904.']];
 const fl = document.getElementById('faqList');
 FAQ.forEach(([q,a],i)=>{fl.insertAdjacentHTML('beforeend',`<div class="q"><h3><button type="button" id="b${i}" aria-expanded="false" aria-controls="a${i}">${q}</button></h3><div class="ans" id="a${i}" role="region" aria-labelledby="b${i}"><div><p>${a}</p></div></div></div>`)});
@@ -347,6 +357,22 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')toggle(false)});
 /* Copiar endereço */
 document.getElementById('copy').onclick=async()=>{const t=document.getElementById('addr').textContent,m=document.getElementById('copied');
 try{await navigator.clipboard.writeText(t);m.textContent='Endereço copiado!'}catch(e){m.textContent='Selecione e copie o endereço acima.'}setTimeout(()=>m.textContent='',3000)};
+
+/* Horário de funcionamento (fuso de Brasília) e status aberto/fechado */
+const HRS=[null,[8,15],[8,19],[8,19],[8,19],[8,19],[8,17]]; /* 0=domingo ... 6=sábado */
+const DN=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+const fmt=h=>String(h).padStart(2,'0')+':00';
+function nowBR(){const p=new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',weekday:'short',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(new Date());const g=t=>p.find(x=>x.type===t).value;return{d:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(g('weekday')),m:(+g('hour')%24)*60+(+g('minute'))}}
+function renderHours(){
+ const n=nowBR(),ul=document.getElementById('hours'),st=document.getElementById('status');
+ ul.innerHTML=[1,2,3,4,5,6,0].map(d=>`<li${d===n.d?' class="today"':''}><span>${DN[d][0].toUpperCase()+DN[d].slice(1)}</span><span>${HRS[d]?fmt(HRS[d][0])+' – '+fmt(HRS[d][1]):'Fechado'}</span></li>`).join('');
+ const h=HRS[n.d];
+ if(h&&n.m>=h[0]*60&&n.m<h[1]*60){st.className='status open';st.textContent='Aberto agora · fecha às '+fmt(h[1]);return}
+ let nx='';
+ for(let i=0;i<=7;i++){const d=(n.d+i)%7,x=HRS[d];if(!x)continue;if(i===0&&n.m>=x[0]*60)continue;nx=' · abre '+(i===0?'hoje':i===1?'amanhã':DN[d])+' às '+fmt(x[0]);break}
+ st.className='status closed';st.textContent='Fechado agora'+nx;
+}
+renderHours();setInterval(renderHours,60000);
 
 /* Ano e animações de entrada */
 document.getElementById('yr').textContent=new Date().getFullYear();
